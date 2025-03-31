@@ -31,6 +31,8 @@ import java.net.URI;
 import java.util.*;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.StringTokenizer;
+import java.util.ArrayList;
 
 /**
  * Compute the bigram count using "pairs" approach
@@ -38,11 +40,9 @@ import java.util.HashMap;
 public class CORPairs extends Configured implements Tool {
 	private static final Logger LOG = Logger.getLogger(CORPairs.class);
 
-	/*
-	 * TODO: Write your first-pass Mapper here.
-	 */
 	private static class CORMapper1 extends
 			Mapper<LongWritable, Text, Text, IntWritable> {
+		private static final IntWritable ONE = new IntWritable(1);
 		@Override
 		public void map(LongWritable key, Text value, Context context)
 				throws IOException, InterruptedException {
@@ -53,27 +53,35 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			while (doc_tokenizer.hasMoreTokens()) {
+				Text token = new Text(doc_tokenizer.nextToken());
+				context.write(token, ONE);
+			}
 		}
 	}
 
-	/*
-	 * TODO: Write your first-pass reducer here.
-	 */
 	private static class CORReducer1 extends
 			Reducer<Text, IntWritable, Text, IntWritable> {
+		private final static IntWritable SUM = new IntWritable();
 		@Override
 		public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			Iterator<IntWritable> iter = values.iterator();
+			int sum = 0;
+			while (iter.hasNext()) {
+				sum += iter.next().get();
+			}
+			SUM.set(sum);
+			context.write(key, SUM);
 		}
 	}
 
 
-	/*
-	 * TODO: Write your second-pass Mapper here.
-	 */
 	public static class CORPairsMapper2 extends Mapper<LongWritable, Text, PairOfStrings, IntWritable> {
+		private static final IntWritable ONE = new IntWritable(1);
+		private static final PairOfStrings BIGRAM = new PairOfStrings();
 		@Override
 		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 			// Please use this tokenizer! DO NOT implement a tokenizer by yourself!
@@ -81,24 +89,63 @@ public class CORPairs extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			ArrayList<String> tokenList = new ArrayList<String>();
+			while (doc_tokenizer.hasMoreTokens()) {
+				String token = doc_tokenizer.nextToken();
+				tokenList.add(token);
+			}
+			HashMap<String, Integer> table = new HashMap<String, Integer>();
+			for (int i = 0; i < tokenList.size(); ++i) {
+				for (int j = 0; j < tokenList.size(); ++j) if (j != i) {
+					String w1 = tokenList.get(i);
+					String w2 = tokenList.get(j);
+					if (w1.compareTo(w2) < 0) {
+						String w = w1 + "/" + w2;
+						if (!table.containsKey(w)) {
+							table.put(w, 1);
+							BIGRAM.set(w1, w2);
+							context.write(BIGRAM, ONE);
+						}
+					}
+				}
+			}
+			// ArrayList<String> biwords = new ArrayList<String>();
+			// for (int i = 0; i < tokenList.size(); ++i) {
+			// 	BIGRAM.set(tokenList.get(i), "");
+			// 	context.write(BIGRAM, ONE);
+			// 	for (int j = 0; j < tokenList.size(); ++j) if (j != i) {
+			// 		String w1 = tokenList.get(i);
+			// 		String w2 = tokenList.get(j);
+			// 		String w = w1 + "##@@##" + w2;
+			// 		boolean found = false;
+			// 		for (int k = 0; k < biwords.size(); ++k) {
+			// 			if (biwords.get(k).equals(w)) {
+			// 				//found = true;
+			// 			}
+			// 		}
+			// 		if (!found) {
+			// 			biwords.add(w);
+			// 			BIGRAM.set(w1, w2);
+			// 			context.write(BIGRAM, ONE);
+			// 		}
+			// 	}
+			// }
 		}
 	}
 
-	/*
-	 * TODO: Write your second-pass Combiner here.
-	 */
 	private static class CORPairsCombiner2 extends Reducer<PairOfStrings, IntWritable, PairOfStrings, IntWritable> {
 		@Override
 		protected void reduce(PairOfStrings key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			Iterator<IntWritable> iter = values.iterator();
+			while (iter.hasNext()) {
+				context.write(key, iter.next());
+			}
 		}
 	}
 
-	/*
-	 * TODO: Write your second-pass Reducer here.
-	 */
 	public static class CORPairsReducer2 extends Reducer<PairOfStrings, IntWritable, PairOfStrings, DoubleWritable> {
 		private final static Map<String, Integer> word_total_map = new HashMap<String, Integer>();
 
@@ -137,14 +184,24 @@ public class CORPairs extends Configured implements Tool {
 			}
 		}
 
-		/*
-		 * TODO: write your second-pass Reducer here.
-		 */
+		private static final DoubleWritable SUM = new DoubleWritable();
 		@Override
 		protected void reduce(PairOfStrings key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			//SUM.set(0.0); context.write(key, SUM);
+			String A = key.getLeftElement();
+			String B = key.getRightElement();
+			double freqA = word_total_map.get(A);
+			double freqB = word_total_map.get(B);
+			Iterator<IntWritable> iter = values.iterator();
+			double sum = 0;
+			while (iter.hasNext()) {
+				sum += iter.next().get();
+			}
+			SUM.set(sum / (freqA * freqB));
+			context.write(key, SUM);
 		}
 	}
 
