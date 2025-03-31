@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.util.*;
+import java.util.Map.Entry;
 
 /**
  * Compute the bigram count using "pairs" approach
@@ -28,11 +29,9 @@ import java.util.*;
 public class CORStripes extends Configured implements Tool {
 	private static final Logger LOG = Logger.getLogger(CORStripes.class);
 
-	/*
-	 * TODO: write your first-pass Mapper here.
-	 */
 	private static class CORMapper1 extends
 			Mapper<LongWritable, Text, Text, IntWritable> {
+		private static final IntWritable ONE = new IntWritable(1);
 		@Override
 		public void map(LongWritable key, Text value, Context context)
 				throws IOException, InterruptedException {
@@ -43,19 +42,28 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			while (doc_tokenizer.hasMoreTokens()) {
+				Text token = new Text(doc_tokenizer.nextToken());
+				context.write(token, ONE);
+			}
 		}
 	}
 
-	/*
-	 * TODO: Write your first-pass reducer here.
-	 */
 	private static class CORReducer1 extends
 			Reducer<Text, IntWritable, Text, IntWritable> {
+		private final static IntWritable SUM = new IntWritable();
 		@Override
 		public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			Iterator<IntWritable> iter = values.iterator();
+			int sum = 0;
+			while (iter.hasNext()) {
+				sum += iter.next().get();
+			}
+			SUM.set(sum);
+			context.write(key, SUM);
 		}
 	}
 
@@ -63,6 +71,7 @@ public class CORStripes extends Configured implements Tool {
 	 * TODO: Write your second-pass Mapper here.
 	 */
 	public static class CORStripesMapper2 extends Mapper<LongWritable, Text, Text, MapWritable> {
+		private static final IntWritable ONE = new IntWritable(1);
 		@Override
 		protected void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
 			Set<String> sorted_word_set = new TreeSet<String>();
@@ -75,6 +84,15 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			for (String w1 : sorted_word_set) {
+				MapWritable map = new MapWritable();
+				for (String w2 : sorted_word_set) {
+					if (w1.compareTo(w2) < 0) {
+						map.put(new Text(w2), ONE);
+					}
+				}
+				context.write(new Text(w1), map);
+			}
 		}
 	}
 
@@ -89,6 +107,10 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			Iterator<MapWritable> iter = values.iterator();
+			while (iter.hasNext()) {
+				context.write(key, iter.next());
+			}
 		}
 	}
 
@@ -98,6 +120,8 @@ public class CORStripes extends Configured implements Tool {
 	public static class CORStripesReducer2 extends Reducer<Text, MapWritable, PairOfStrings, DoubleWritable> {
 		private static Map<String, Integer> word_total_map = new HashMap<String, Integer>();
 		private static IntWritable ZERO = new IntWritable(0);
+		private static final DoubleWritable SUM = new DoubleWritable();
+		private static final PairOfStrings BIGRAM = new PairOfStrings();
 
 		/*
 		 * Preload the middle result file.
@@ -142,6 +166,25 @@ public class CORStripes extends Configured implements Tool {
 			/*
 			 * TODO: Your implementation goes here.
 			 */
+			String A = key.toString();
+			double freqA = word_total_map.get(A);
+			HashMapStringIntWritable sum = new HashMapStringIntWritable();
+			Iterator<MapWritable> iter = values.iterator();
+			while (iter.hasNext()) {
+				for (Map.Entry<Writable, Writable> entry : iter.next().entrySet()) {
+			 		String B = ((Text)entry.getKey()).toString();
+					int value = ((IntWritable)entry.getValue()).get();
+					sum.increment(B, value);
+				}
+			}
+			for (Entry<String, Integer> mapElement : sum.entrySet()) { 
+				String B = (String)mapElement.getKey(); 
+	            int value = (int)mapElement.getValue();
+				double freqB = word_total_map.get(B);
+				SUM.set(value / (freqA * freqB));
+				BIGRAM.set(A, B);
+				context.write(BIGRAM, SUM);
+			}
 		}
 	}
 
